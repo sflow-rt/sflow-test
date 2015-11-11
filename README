@@ -1,8 +1,12 @@
 Test sFlow agent implementation
 
+Requires sFlow-RT version 2.0-r1033 or later
+
 Based on test described in article:
 http://blog.sflow.com/2013/06/large-flow-detection.html
 
-Copy files to the sFlow-RT app directory and restart to install. Online help is available through web UI.
+Copy files to the sFlow-RT app directory and restart to install.
+Online help is available through web UI and in article:
+http://blog.sflow.com/2015/11/sflow-test.html
 
 For more information, visit: http://www.sFlow-RT.com
