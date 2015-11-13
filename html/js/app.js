@@ -108,7 +108,7 @@ $(function() {
   });
 
   function updateTests(data) {
-    var status = $('#results tbody');
+    var status = $('#info tbody');
     status.empty();
     if(data && data.tests && data.tests.length > 0) {
       for(var r = 0; r < data.tests.length; r++) {
