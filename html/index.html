@@ -23,22 +23,22 @@
     <div id="tests">
        <fieldset>
          <span>
-         <label for="agent">Switch</label>
-         <select name="agent" id="agent" class="menu-button">
-           <option value="none" selected>none</option>
-         </select>
+           <label for="agent">Switch</label>
+           <select name="agent" id="agent" class="menu-button">
+             <option value="none" selected>none</option>
+           </select>
          </span>
          <span>
-         <span>
-         <button id="start">Start</button>
-         <button id="end">End</button>
-         <button id="print">Print</button>
+           <button id="start">Start</button>
+           <button id="end">End</button>
+           <button id="print">Print</button>
          </span>
        </fieldset>
       <div id="results">
         <h3>Traffic</h3>
         <div id="bytes" class="trend"></div>
         <div id="frames" class="trend"></div>
+        <div id="samples" class="trend"></div>
         <h3>Test Results</h3>
         <table class="stripe" id="info">
           <thead><tr><th>Status</th><th>Test</th><th>Info</th></tr></thead>
@@ -47,24 +47,35 @@
       </div>
     </div>
     <div id="instructions">
-      <p>Configure switch with following settings:</p>
+      <p>Tests can be applied while a switch is in production and are a useful way of verifying that the switch is configured and operating correctly.</p> 
+      <p>The following table contains recommended sFlow configuraton settings for production switches:</p>
       <table class="stripe">
          <thead><tr><th>Port Speed</th><th>Sampling Rate</th><th>Polling Interval</th></tr></thead>
          <tbody>
-           <tr class="even"><td class="alignr">1 Gbit/s</td><td class="alignr">1-in-1,000</td><td class="alignr">20 seconds</td></tr>
-           <tr class="odd"><td class="alignr">10 Gbit/s</td><td class="alignr">1-in-10,000</td><td class="alignr">20 seconds</td></tr>
-           <tr class="even"><td class="alignr">25 Gbit/s</td><td class="alignr">1-in-25,000</td><td class="alignr">20 seconds</td></tr>
-           <tr class="odd"><td class="alignr">40 Gbit/s</td><td class="alignr">1-in-40,000</td><td class="alignr">20 seconds</td></tr>
-           <tr class="even"><td class="alignr">50 Gbit/s</td><td class="alignr">1-in-50,000</td><td class="alignr">20 seconds</td></tr>
-           <tr class="odd"><td class="alignr">100 Gbit/s</td><td class="alignr">1-in-100,000</td><td class="alignr">20 seconds</td></tr>
+           <tr class="even"><td class="alignr">1 Gbit/s</td><td class="alignr">1-in-1,000</td><td class="alignr">30 seconds</td></tr>
+           <tr class="odd"><td class="alignr">2.5 Gbit/s</td><td class="alignr">1-in-2,500</td><td class="alignr">30 seconds</td></tr>
+           <tr class="even"><td class="alignr">5 Gbit/s</td><td class="alignr">1-in-5,000</td><td class="alignr">30 seconds</td></tr>
+           <tr class="odd"><td class="alignr">10 Gbit/s</td><td class="alignr">1-in-10,000</td><td class="alignr">30 seconds</td></tr>
+           <tr class="even"><td class="alignr">25 Gbit/s</td><td class="alignr">1-in-25,000</td><td class="alignr">30 seconds</td></tr>
+           <tr class="odd"><td class="alignr">40 Gbit/s</td><td class="alignr">1-in-40,000</td><td class="alignr">30 seconds</td></tr>
+           <tr class="even"><td class="alignr">50 Gbit/s</td><td class="alignr">1-in-50,000</td><td class="alignr">30 seconds</td></tr>
+           <tr class="odd"><td class="alignr">100 Gbit/s</td><td class="alignr">1-in-100,000</td><td class="alignr">30 seconds</td></tr>
          </tbody>
        </table>
-       <p>Sampling and polling must be enabled on all switch ports. Test requires ingress only packet sampling.</p>
-       <p>Generate traffic:</p>
-       <ul>
-         <li>ping -f between a pair of ports</li>
-         <li>generate load (expressed in percent of total switch capacity): 40 seconds 10%, 40 seconds 0%, 40 seconds 20%, 40 seconds 0%, 40 seconds 30%</li>
-       </ul>
+       <p>Enable counter polling and ingress packet sampling on all switch ports on all switches.</p>
+       <img src="img/test-setup.png" class="diagram">
+       <p>The diagram shows a simple setup for bench testing a switch. <i>Server1</i> and <i>Server2</i> are Linux servers uses to generate traffic through the switch being tested.</p>
+       <p>The following steps run the test:</p> 
+       <ol>
+         <li>Configure sFlow polling interval on switch to 10 seconds</li>
+         <li>Configure sFlow sampling rate on switch to 1000/#ports, e.g. 1-in-21 for 48 port switch.</li>
+         <li>Install iperf3 on both servers.</li>
+         <li>Copy <a href="run-test.txt">run-test.txt</a> script to <i>Server1</i>.</li>
+         <li>Start iperf3 server on <i>Server2</i>:<br><code>iperf3 -s</code></li>
+         <li>Select Switch on Tests tab and click Start</li>
+         <li>Run traffic generation script on <i>Server1</i>:<br><code>sh run-test.txt Server2</code></li>
+       </ol>
+       <p>The aggressive sampling rate used in this test generates a load on the switch management CPU that is representative of production deployment using the recommended settings.</p>
     </div>
   </div>
 </body>

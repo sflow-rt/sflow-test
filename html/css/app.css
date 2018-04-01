@@ -48,3 +48,11 @@ fieldset {
 select { width: 200px; }
 .menu-button + .ui-selectmenu-button { vertical-align : middle; }
 .ui-menu-item { font-size:80%; }
+
+.diagram {
+  display: block;
+  width: 80%;
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+}

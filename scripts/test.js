@@ -1,10 +1,21 @@
 // author: InMon Corp.
-// version: 0.1
-// date: 11/10/2015
-// description: Test data center switch sFlow implementation
-// copyright: Copyright (c) 2015 InMon Corp. ALL RIGHTS RESERVED
+// version: 1.0
+// date: 3/19/2018
+// description: Test sFlow export from switch/router
+// copyright: Copyright (c) 2015-2018 InMon Corp. ALL RIGHTS RESERVED
 
 include(scriptdir() + '/inc/trend.js');
+
+var includeRandomTest = "yes" == getSystemProperty("sflow-test.random");
+
+var PASS='pass';
+var FAIL='fail';
+var WAIT='wait';
+function testResult(id,descr,status,data) {
+  var result = {id:id,descr:descr,status:status};
+  if(data) result.data = data;
+  return result;
+}
 
 Math.sign = Math.sign || function(x) {
   x = +x; // convert to a number
@@ -14,31 +25,47 @@ Math.sign = Math.sign || function(x) {
   return x > 0 ? 1 : -1;
 }
 
-baselineCreate('bps-error');
-baselineCreate('pps-error');
+baselineCreate('bps-flows');
+baselineCreate('bps-counters');
+baselineCreate('pps-flows');
+baselineCreate('pps-counters');
 var test = {};
-function initializeTest(agt) {
-  baselineReset('bps-error');
-  baselineReset('pps-error');
-  test.agent = agt;
+var agent = null;
+function initializeTest() {
+  baselineReset('bps-flows');
+  baselineReset('bps-counters');
+  baselineReset('pps-flows');
+  baselineReset('pps-counters');
+  test.agent = agent;
+  test.agents = agents();
   test.trend = null;
-  test.load_bps = 0;
-  test.load_pps = 0;
+  test.flowSamples = 0;
   test.flowInputPorts = {};
   test.flowOutputPorts = {};
   test.flowSizePackets = 0;
   test.flowSizeErrors = 0;
+  test.flowSizeStrippedErrors = 0;
   test.icmpTest = {};
-  test.agents = agents();
-  test.start = (new Date()).getTime();
+  test.features = {};
+  test.start = Date.now();
 }
 
+setFlow('sflow-test-bytes',{value:'bytes',filter:'direction=ingress',t:1});
+setFlow('sflow-test-frames',{value:'frames',filter:'direction=ingress',t:1});
+setFlow('sflow-test-ports',{keys:'inputifindex,outputifindex',value:'frames',filter:'direction=ingress',log:true, activeTimeout:10});
+setFlow('sflow-test-sizes',{keys:'ip_offset,ipbytes,bytes,stripped',value:'frames',filter:'direction=ingress',log:true,activeTimeout:10});
+setFlow('sflow-test-icmp',{keys:'ipsource,ipdestination,icmptype,icmpseqno',value:'frames',filter:'direction=ingress&prefix:stack:.:1=eth',log:true,flowStart:true,activeTimeout:1});
 
-setFlow('sflow-test-bytes',{value:'bytes',filter:'direction=ingress'});
-setFlow('sflow-test-frames',{value:'frames',filter:'direction=ingress'});
-setFlow('sflow-test-ports',{keys:'inputifindex,outputifindex',value:'frames',filter:'direction=ingress',log:true, activeTimeout:1});
-setFlow('sflow-test-sizes',{keys:'ip_offset,ipbytes,bytes,stripped',value:'frames',filter:'direction=ingress&prefix:stack:.:2=eth.ip',log:true,activeTimeout:1});
-setFlow('sflow-test-icmp',{keys:'ipsource,ipdestination,icmptype,icmpseqno',value:'frames',filter:'direction=ingress',log:true,flowStart:true});
+var featureRecs = [
+  {key:'inputifindex',missing:'0'},
+  {key:'outputifindex',missing:'0'},
+  {key:'vlansource'},
+  {key:'vlandestination'},
+  {key:'prioritysource'},
+  {key:'prioritydestination'}
+];
+var featureKeys = featureRecs.map(rec => 'null:'+rec.key);
+setFlow('sflow-test-features',{keys:featureKeys,value:'frames',filter:'direction=ingress',log:true,flowStart:true});
 
 function testRandom(signs) {
   // Runs test for detecting non-randomness
@@ -71,17 +98,8 @@ function testRandom(signs) {
   return res;
 }
 
-var PASS='pass';
-var FAIL='fail';
-var WAIT='wait';
-function testResult(name,status,data) {
-  var result = {name:name,status:status};
-  if(data) result.data = data;
-  return result;
-}
-
 setFlowHandler(function(rec) {
-  if(rec.agent !== test.agent) return;
+  if(rec.agent != test.agent) return;
 
   switch(rec.name) {
     case 'sflow-test-ports':
@@ -95,10 +113,19 @@ setFlowHandler(function(rec) {
       ipbytes = parseInt(ipbytes);
       bytes = parseInt(bytes);
       stripped = parseInt(stripped);
-      if(bytes >= 68) {
-        if(bytes != (ip_offset+ipbytes+stripped)) test.flowSizeErrors++;
-        else test.flowSizePackets++;
+      let samples = 1;
+      let info = datasourceInfo(rec.agent,rec.dataSource);
+      if(info) {
+        let samplingRate = info.samplingRate;
+        if(samplingRate) {
+          samples = Math.max(1,Math.round(rec.value / samplingRate));
+        }
       }
+      if(bytes >= 68) {
+        if(bytes != (ip_offset+ipbytes+stripped)) test.flowSizeErrors+=samples;
+        else test.flowSizePackets+=samples;
+      }
+      if(stripped < 4) test.flowSizeStrippedErrors+=samples;
       break;
     case 'sflow-test-icmp':
       let [ipsource,ipdestination,icmptype,icmpseqno] = rec.flowKeys.split(',');
@@ -125,11 +152,28 @@ setFlowHandler(function(rec) {
         test.icmpTest[testkey] = res;
       }
       break;
+    case 'sflow-test-features':
+      let keyvals = rec.flowKeys.split(',');
+      for(let i = 0; i < keyvals.length; i++) {
+        let keyval = keyvals[i];
+        let missing = keyval == 'null' || (featureRecs[i].hasOwnProperty('missing') && keyval == featureRecs[i].missing);
+        if(!missing) test.features[featureRecs[i].key] = true;
+      }
+      break;
   }
-},['sflow-test-ports','sflow-test-sizes','sflow-test-icmp']);
+},['sflow-test-ports','sflow-test-sizes','sflow-test-icmp','sflow-test-features']);
+
+function getFeatures() {
+  var result = [];
+  if(!test.agent) return result;
+
+  for(var i = 0; i < featureRecs.length; i++) {
+    if(test.features[featureRecs[i].key]) result.push(featureRecs[i].key);
+  }
+  return result;
+}
 
 function checkAgent(res) {
-  var result = {};
   if(!test.agent) return;
   
   var agentsInfo = agents([test.agent]);
@@ -139,7 +183,7 @@ function checkAgent(res) {
 
   var elapsed = Math.min(agentInfo.firstSeen,(new Date()).getTime() - test.start) / 1000;
   var status = elapsed < 300 ? WAIT : PASS; 
-  res.push(testResult("test duration",status,formatNumber(elapsed,"#,##0")));
+  res.push(testResult("duration","test duration",status,formatNumber(elapsed,"#,##0 seconds")));
 
   var counter, val, prev = test.agents[test.agent];
   var agtErrorCounters = [
@@ -155,76 +199,55 @@ function checkAgent(res) {
     if(prev) val -= prev[counter];
     if(val > 0) break;
   }
-  res.push(testResult("check sequence numbers", val > 0 ? FAIL : PASS, val > 0 ? counter : formatNumber(prev ? agentInfo['sFlowDatagramsReceived'] - prev['sFlowDatagramsReceived'] : agentInfo['sFlowDatagramsReceived'],'#,###')));
+  var datagrams = prev ? agentInfo['sFlowDatagramsReceived'] - prev['sFlowDatagramsReceived'] : agentInfo['sFlowDatagramsReceived'];
+  res.push(testResult("seqno","check sequence numbers", val > 0 ? FAIL : (datagrams ? PASS : WAIT), val > 0 ? counter : formatNumber(datagrams,'#,### datagrams')));
 }
 
 function checkDatasources(res) {
   if(!test.agent) return;
 
   var dataSources = {};
-  for each (var m in dump(test.agent,'ALL')) {
+  for each (var m in dump(test.agent,'ifinpkts,sflow-test-frames')) {
      dataSources[m.dataSource] = m.dataSource;
   }
  
   var ds, msg, dir, flow = 0, counter = 0; 
   for(ds in dataSources) {
     let info = datasourceInfo(test.agent,ds);
-    if(info.flowSamples) {
+    if(info && info.samplingRate) {
       flow++;
-      // check against ifSpeed recommended settings
-      let ifSpeed = metric(test.agent,ds+'.ifspeed')[0].metricValue;
-      if(!ifSpeed) {
-        msg = "missing ifspeed for "+ds;
-        break;
-      } else {
-        let targetSamplingRate = Math.round(ifSpeed / 1000000);
-        if(info.samplingRate > targetSamplingRate) { 
-          let diff = (info.samplingRate - targetSamplingRate) / targetSamplingRate;
-          if(diff > 0.4) {
-            msg = "incorrect sampling rate setting for "+ds;
-            break;
-          }
-        }
-        let diff = Math.abs((info.effectiveSamplingRate - info.samplingRate) / info.samplingRate);
-        if(diff > 0.1) {
-          msg = "packet loss or inconsistent sample pool for "+ds;
-          break;
-        }
-      }
-      if(dir) {
-        if(info.samplingDirection !== dir) {
-          msg = "inconsistent sampling direction";
-          break;
-        } 
-      } else dir = info.samplingDirection;
-      if('egress' === info.samplingDirection) {
-        msg = "egress sampling for "+ds;
+      let diff = Math.abs((info.effectiveSamplingRate - info.samplingRate) / info.samplingRate);
+      if(diff > 0.2) {
+        msg = "packet loss or inconsistent sample pool, ifIndex="+ds;
         break;
       }
     }
     if(info.counterSamples) {
       counter++;
-      if(info.effectivePollingInterval > 25000) {
-        msg = "polling interval for "+ds;
+      if(info.effectivePollingInterval > 40000) {
+        msg = "polling interval="+Math.round(info.effectivePollingInterval/1000)+" seconds, ifIndex="+ds;
       } 
     }
   }
-  res.push(testResult("check data sources", msg ? FAIL : PASS, msg ? msg : "counter="+counter+" flow="+flow));
+  res.push(testResult("datasources","check data sources", msg ? FAIL : (flow > 0 && counter > 0) ? PASS : WAIT, msg ? msg : "counter="+counter+" flow="+flow));
 }
 
 function checkFlowSize(res) {
   var status, msg;
-  if(test.flowSizeErrors) {
+  if(test.flowSizeStrippedErrors) {
     status = FAIL;
-    msg = "bad samples="+test.flowSizeErrors;
-  } else if(test.flowSizePackets < 100) {
+    msg = formatNumber(test.flowSizeStrippedErrors,'#,### bad stripped samples');
+  } else if(test.flowSizeErrors) {
+    status = FAIL;
+    msg = formatNumber(test.flowSizeErrors,'#,### bad samples');
+  } else if(test.flowSizePackets < 1000) {
     status = WAIT;
-    msg = "samples="+test.flowSizePackets;
+    msg = formatNumber(test.flowSizePackets,'#,### samples');
   } else {
     status = PASS;
-    msg = "sampled="+test.flowSizePackets;
+    msg = formatNumber(test.flowSizePackets,'#,### samples');
   }
-  res.push(testResult("sampled packet size",status,msg)); 
+  res.push(testResult("pktsize","sampled packet size",status,msg)); 
 }
 
 function checkRandomness(res) {
@@ -257,54 +280,59 @@ function checkRandomness(res) {
         break;
     } 
   }
-  res.push(testResult("random number generator", failed > 0 ? FAILED : (passed === 0 ? WAIT : PASS),"passed="+passed+" failed="+failed));
+  res.push(testResult("random","random number generator", failed > 0 ? FAILED : (passed === 0 ? WAIT : PASS),"passed="+passed+" failed="+failed));
 }
 
 function checkBias(res) {
-  var stats,status,min,max,msg;
-  stats = baselineStatistics('bps-error');
-  if(stats) {
-    min = stats.mean - (1.96 * stats.sdev);
-    max = stats.mean + (1.96 * stats.sdev);
-    msg = "min="+formatNumber(min,'#,##0')+" max="+formatNumber(max,'#,##0');
-    if(min < 0 && max > 0) status = PASS;
+  var stats_counters,stats_flows,status,diff,msg;
+  stats_counters = baselineStatistics('bps-counters');
+  stats_flows = baselineStatistics('bps-flows');
+  if(stats_counters && stats_flows) {
+    diff = 100 * Math.abs(stats_counters.mean - stats_flows.mean) / stats_counters.mean;  
+    msg = formatNumber(diff, "0'%' difference");
+    if(diff < 40) status = PASS;
     else status = FAIL;
   } else {
     msg = null;
     status = WAIT;
   }
-  res.push(testResult("compare byte flows and counters",status,msg));
-  stats = baselineStatistics('pps-error');
-  if(stats) {
-    min = stats.mean - (1.96 * stats.sdev);
-    max = stats.mean + (1.96 * stats.sdev);
-    msg = "min="+formatNumber(min,'#,##0')+" max="+formatNumber(max,'#,##0'); 
-    if(min < 0 && max > 0) status = PASS;
+  res.push(testResult("bytes","compare byte flows to counters",status,msg));
+  stats_counters = baselineStatistics('pps-counters');
+  stats_flows = baselineStatistics('pps-flows');
+  if(stats_counters && stats_flows) {
+    diff = 100 * Math.abs(stats_counters.mean - stats_flows.mean) / stats_counters.mean;
+    msg = formatNumber(diff, "0'%' difference");
+    if(diff < 40) status = PASS;
     else status = FAIL;
   } else {
     msg = null;
     status = WAIT;
   }
-  res.push(testResult("compare packet flows and counters",status,msg));
+  res.push(testResult("packets","compare packet flows to counters",status,msg));
 }
 
 function checkIngressPorts(res) {
-  var status, count = 0, matchedPortCount = 0, inputPortCount = 0;
+  var status, count = 0, inputPortCount = 0, outputPortCount = 0;
   if(test.flowInputPorts) {
     for(var prt in test.flowInputPorts) {
       count++;
       if('internal' === prt || 'multiple' === prt || '0' === prt) continue;
       inputPortCount++;
-      if(test.flowOutputPorts[prt]) matchedPortCount++;
+    }
+  }
+  if(test.flowOutputPorts) {
+    for(var prt in test.flowOutputPorts) {
+      if('internal' === prt || 'multiple' === prt || '0' === prt) continue;
+      outputPortCount++;
     }
   }
   if(count === 0) status = WAIT;
   else if(inputPortCount > 0) status = PASS;
   else status = FAIL;
-  res.push(testResult("check ingress port information",status,"ingress="+inputPortCount+" egress="+matchedPortCount));
+  res.push(testResult("ingressportinfo","check ingress port information",status,"ingress="+inputPortCount+" egress="+outputPortCount));
 }
 
-setIntervalHandler(function() {
+setIntervalHandler(function(now) {
   if(!test.agent) return;
   if(!test.trend) test.trend = new Trend(300,1);
 
@@ -315,18 +343,28 @@ setIntervalHandler(function() {
 
   points['bps-counters'] = (res[0].metricValue || 0) * 8;
   points['bps-flows'] = (res[1].metricValue || 0) * 8;
-  points['bps-load'] = test.load_bps;
   points['pps-counters'] = res[2].metricValue || 0;
   points['pps-flows'] = res[3].metricValue || 0;
-  points['pps-load'] = test.load_pps;
-  test.trend.addPoints(points);
 
-  // calculate difference between counters and flows
-  var bps_diff = points['bps-counters'] - points['bps-flows'];
-  var pps_diff = points['pps-counters'] - points['pps-flows'];
+  // calculate flow sample rate
+  var agentsInfo = agents([test.agent]);
+  var flowSampleRate = 0;
+  if(agentsInfo) {
+    let agentInfo = agentsInfo[test.agent];
+    if(agentInfo) {
+      let flowSamples = agentInfo.sFlowFlowSamples;
+      if(test.flowSamples) flowSampleRate = flowSamples - test.flowSamples;
+      test.flowSamples = flowSamples; 
+    } 
+  }
+  points['sample-rate'] = flowSampleRate;
+
+  test.trend.addPoints(now,points);
   
-  baselineCheck('bps-error',bps_diff);
-  baselineCheck('pps-error',pps_diff);  
+  baselineCheck('bps-flows',points['bps-flows']);
+  baselineCheck('bps-counters',points['bps-counters']);
+  baselineCheck('pps-flows',points['pps-flows']);
+  baselineCheck('pps-counters',points['pps-counters']);
 },1);
 
 setHttpHandler(function(req) {
@@ -336,29 +374,31 @@ setHttpHandler(function(req) {
   switch(path[0]) {
     case 'agents':
       result = {agents:[]};
-      if(test.agent) result.agent = test.agent;
+      if(agent) result.agent = agent;
       for(let agt in agents()) result.agents.push(agt);
       result.agents.sort();
       break;
-    case 'test':
-      if('start' === req.body.test) initializeTest(req.body.agent);
+    case 'agent':
+      agent = req.query.agent;
       break;
-    case 'load':
-      test.load_bps = req.query.bps && parseInt(req.query.bps) || 0;
-      test.load_pps = req.query.pps && parseInt(req.query.pps) || 0;
+    case 'start':
+      initializeTest();
+      break;
+    case 'stop':
       break;
     case 'checks':
       result = {};
-      if(test.trend) result.trend = req.query.after ? test.trend.after(parseInt(req.query.after)) : test.trend;
+      if(test.trend) result.trend = test.trend;
      
-      tests = []; 
+      tests = [];
       checkAgent(tests);
       checkDatasources(tests);
       checkFlowSize(tests);
-      checkRandomness(tests);
       checkBias(tests);
       checkIngressPorts(tests);
+      if(includeRandomTest) checkRandomness(tests);
       result.tests = tests;
+      result.features = getFeatures();
       break;
     default:
       throw "not_found";

@@ -1,15 +1,10 @@
 $(function() { 
-  var restPath =  '../scripts/metrics.js/';
-  var dataURL = restPath + 'trend/json';
-  var backgroundColor = '#ffffff';
-  var SEP = '_SEP_';
-  var colors = [
-    '#3366cc','#dc3912','#ff9900','#109618','#990099','#0099c6','#dd4477',
-    '#66aa00','#b82e2e','#316395','#994499','#22aa99','#aaaa11','#6633cc',
-    '#e67300','#8b0707','#651067','#329262','#5574a6','#3b3eac','#b77322',
-    '#16d620','#b91383','#f4359e','#9c5935','#a9c413','#2a778d','#668d1c',
-    '#bea413','#0c5922','#743411'
-  ];
+  var restPath =  '../scripts/test.js/';
+  var agentsPath = restPath+"agents/json";
+  var agentPath = restPath+"agent/json";
+  var checkPath = restPath+"checks/json";
+  var startPath = restPath+"start/json";
+  var stopPath = restPath+"stop/json";
 
   var defaults = {
     tab:0,
@@ -75,24 +70,26 @@ $(function() {
   var db = {};
   $('#bytes').chart({
     type: 'trend',
-    metrics: ['bps-counters','bps-flows','bps-load'],
-    legend:['Counters','Flows','Load'],
+    metrics: ['bps-counters','bps-flows'],
+    legend:['Counters','Flows'],
     stack: false,
-    colors: colors,
-    backgroundColor: backgroundColor,
     units: 'Bits per Second'},
   db);
   $('#frames').chart({
     type: 'trend',
-    metrics: ['pps-counters','pps-flows','pps-load'],
-    legend:['Counters','Flows','Load'],
+    metrics: ['pps-counters','pps-flows'],
+    legend:['Counters','Flows'],
     stack: false,
-    colors: colors,
-    backgroundColor: backgroundColor,
     units: 'Packets per Second'},
   db);
+  $('#samples').chart({
+    type: 'trend',
+    metrics: ['sample-rate'],
+    stack: false,
+    units: 'Samples per Second'},
+  db);
 
-  $.get("../scripts/test.js/agents/json", function(data) {
+  $.get(agentsPath, function(data) {
     $.each(data.agents, function(index,item) {
       $('<option value="'+ item + '">'+item+'</option>').appendTo('#agent');
     });
@@ -102,6 +99,7 @@ $(function() {
     $('#agent').selectmenu({
       change:function() {
         stopPollTestResults();
+        $.get(agentPath,{'agent':$('#agent').val()});
         $('#results').hide();
       }
     });
@@ -122,7 +120,7 @@ $(function() {
         }
         var row = $('<tr class="'+cl+'"></tr>');
         row.append('<td>'+entry.status+'</td>');
-        row.append('<td>'+entry.name+'</td>');
+        row.append('<td>'+entry.descr+'</td>');
         row.append('<td>'+ (entry.data ? entry.data : '') + '</td>');
         status.append(row);
       }
@@ -148,8 +146,7 @@ $(function() {
   function pollTestResults() {
     running_test = true;
     $.ajax({
-      url: '../scripts/test.js/checks/json',
-      //data:db.trend && db.trend.end ? {after:db.trend.end.getTime()} : null,
+      url: checkPath,
       success: function(data) {
         if(running_test) {
           updateTests(data);
@@ -170,12 +167,8 @@ $(function() {
   }
 
   $('#start').button().click(function() {
-    var agent = $('#agent').val();
     $.ajax({
-      url:'../scripts/test.js/test/json',
-      method:'PUT',
-      contentType:'application/json',
-      data: JSON.stringify({test:'start',agent:agent}),
+      url:startPath,
       success:function() {
         $('#results').show();
         pollTestResults();
@@ -184,11 +177,10 @@ $(function() {
   });
   $('#end').button().click(function() {
     $.ajax({
-      url:'../scripts/test.js/test/json',
-      method:'PUT',
-      contentType:'application/json',
-      data: JSON.stringify({test:'end'}),
-      success: function() { stopPollTestResults(); }
+      url:stopPath,
+      success: function() {
+        stopPollTestResults();
+      }
     });
   });
   $('#print').button().click(function() { window.print(); });
