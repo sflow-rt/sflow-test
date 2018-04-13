@@ -56,3 +56,22 @@ select { width: 200px; }
   margin-left: auto;
   margin-right: auto;
 }
+
+legend {
+  color: #666;
+}
+
+#dialog label {
+  color: #666;
+  float:left;
+  width:25%;
+  margin-right:0.5em;
+  padding-top:0.2em;
+  text-align:right;
+  font-weight:bold;
+}
+
+.warning {
+  color:red;
+  font-weight:bold;
+}

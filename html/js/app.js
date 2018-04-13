@@ -5,6 +5,9 @@ $(function() {
   var checkPath = restPath+"checks/json";
   var startPath = restPath+"start/json";
   var stopPath = restPath+"stop/json";
+  var uploadPath = restPath+"upload/json";
+
+  var lastTest;
 
   var defaults = {
     tab:0,
@@ -53,6 +56,29 @@ $(function() {
   var search = window.location.search;
   if(search) setQueryParams(search.substring(1));
 
+  var dialog = $('#dialog').dialog({
+    autoOpen:false,
+    modal: true,
+    width: '700px',
+    buttons: {
+      Submit: function() {
+        lastTest.vendor = $('#vendor').val();
+        lastTest.model = $('#model').val();
+        lastTest.firmware = $('#firmware').val();
+        lastTest.name = $('#name').val();
+        lastTest.email = $('#email').val();
+        $.ajax({
+          url:uploadPath,
+          type: 'POST',
+          contentType:'application/json',
+          data:JSON.stringify(lastTest)
+        });
+        dialog.dialog('close');
+      },
+      Cancel: function() { dialog.dialog('close'); }
+    }
+  });
+
   $('#tabs').tabs({
     active: getState('tab', 0),
     activate: function(event, ui) {
@@ -70,15 +96,15 @@ $(function() {
   var db = {};
   $('#bytes').chart({
     type: 'trend',
-    metrics: ['bps-counters','bps-flows'],
-    legend:['Counters','Flows'],
+    metrics: ['bps-flows','bps-counters'],
+    legend:['Flows','Counters'],
     stack: false,
     units: 'Bits per Second'},
   db);
   $('#frames').chart({
     type: 'trend',
-    metrics: ['pps-counters','pps-flows'],
-    legend:['Counters','Flows'],
+    metrics: ['pps-flows','pps-counters'],
+    legend:['Flows','Counters'],
     stack: false,
     units: 'Packets per Second'},
   db);
@@ -95,12 +121,21 @@ $(function() {
     });
     if(data.agent) {
       $('#agent').val(data.agent);
+      $('#start').button('option','disabled','none' == data.agent);
+      $('#end').button('option','disabled',true);
+      $('#print').button('option','disabled',true);
+      $('#upload').button('option','disabled',true);
     }
     $('#agent').selectmenu({
       change:function() {
         stopPollTestResults();
+        var agent = $('#agent').val();
         $.get(agentPath,{'agent':$('#agent').val()});
         $('#results').hide();
+        $('#start').button('option','disabled','none'==agent);
+        $('#end').button('option','disabled',true);
+        $('#print').button('option','disabled',true);
+        $('#upload').button('option','disabled',true);
       }
     });
   });
@@ -116,6 +151,8 @@ $(function() {
           case 'wait': cl = 'warn'; break;
           case 'fail': cl = 'error'; break;
           case 'pass': cl = 'good'; break;
+          case 'found': cl = 'good'; break;
+          case 'notfound': cl = 'warn'; break;
           default: cl = r%2 === 0 ? 'even' : 'odd';
         }
         var row = $('<tr class="'+cl+'"></tr>');
@@ -149,6 +186,7 @@ $(function() {
       url: checkPath,
       success: function(data) {
         if(running_test) {
+          lastTest = data;
           updateTests(data);
           updateTrend(data);
           timeout_test = setTimeout(pollTestResults, 1000);
@@ -166,7 +204,12 @@ $(function() {
     if(timeout_test) clearTimeout(timeout_test);
   }
 
-  $('#start').button().click(function() {
+  $('#start').button({disabled:true}).click(function() {
+    $('#agent').selectmenu('option','disabled',true);
+    $('#start').button('option','disabled',true);
+    $('#end').button('option','disabled',false);
+    $('#print').button('option','disabled',true);
+    $('#upload').button('option','disabled',true);
     $.ajax({
       url:startPath,
       success:function() {
@@ -175,7 +218,12 @@ $(function() {
       }
     });
   });
-  $('#end').button().click(function() {
+  $('#end').button({disabled:true}).click(function() {
+    $('#agent').selectmenu('option','disabled',false);
+    $('#start').button('option','disabled',false);
+    $('#end').button('option','disabled',true);
+    $('#print').button('option','disabled',false);
+    $('#upload').button('option','disabled',false);
     $.ajax({
       url:stopPath,
       success: function() {
@@ -183,5 +231,8 @@ $(function() {
       }
     });
   });
-  $('#print').button().click(function() { window.print(); });
+  $('#print').button({disabled:true}).click(function() { window.print(); });
+  $('#upload').button({disabled:true}).click(function() {
+    dialog.dialog('open');
+  });
 });

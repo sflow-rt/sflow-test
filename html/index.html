@@ -17,7 +17,7 @@
 <body>
   <div id="tabs">
     <ul>
-      <li><a href="#tests">Tests</a></li>
+      <li><a href="#tests">Test</a></li>
       <li><a href="#instructions">Instructions</a></li>
     </ul>
     <div id="tests">
@@ -32,14 +32,13 @@
            <button id="start">Start</button>
            <button id="end">End</button>
            <button id="print">Print</button>
+           <button id="upload">Upload</button>
          </span>
        </fieldset>
       <div id="results">
-        <h3>Traffic</h3>
         <div id="bytes" class="trend"></div>
         <div id="frames" class="trend"></div>
         <div id="samples" class="trend"></div>
-        <h3>Test Results</h3>
         <table class="stripe" id="info">
           <thead><tr><th>Status</th><th>Test</th><th>Info</th></tr></thead>
           <tbody></tbody>
@@ -71,12 +70,26 @@
          <li>Configure sFlow sampling rate on switch to 1000/#ports, e.g. 1-in-21 for 48 port switch.</li>
          <li>Install iperf3 on both servers.</li>
          <li>Copy <a href="run-test.txt">run-test.txt</a> script to <i>Server1</i>.</li>
-         <li>Start iperf3 server on <i>Server2</i>:<br><code>iperf3 -s</code></li>
+         <li>Start iperf3 server on <i>Server2</i>:<br><code>iperf3 -s -i 0</code></li>
          <li>Select Switch on Tests tab and click Start</li>
          <li>Run traffic generation script on <i>Server1</i>:<br><code>sh run-test.txt Server2</code></li>
        </ol>
        <p>The aggressive sampling rate used in this test generates a load on the switch management CPU that is representative of production deployment using the recommended settings.</p>
     </div>
+  </div>
+  <div id="dialog" title="Upload Results">
+    <fieldset>
+      <legend>Device Description</legend>
+      <label for="vendor">Vendor</label><input type="text" size="20" name="vendor" id="vendor" class="text ui-widget-content"><br>
+      <label for="model">Model</label><input type="text" size="20" name="model" id="model" class="text ui-widget-content"><br>
+      <label for="firmware">Firmware</label><input type="text" size="40" name="firmware" id="firmware" class="text ui-widget-content">
+    </fieldset>
+    <fieldset>
+      <legend>Contact Information</legend>
+      <label for="name">Name</label><input type="text" size="20" name="name" id="name" class="text ui-widget-content"></br>
+      <label for="email">Email</label><input type="text" size="40" name="email" id="email" class="text ui-widget-content">
+    </fieldset>
+    <p><span class="warning">Warning:</span> You are uploading the test results to sFlow.org where they will be reviewed. The results will not be shared publicly without first obtaining your written permission.</p>
   </div>
 </body>
 </html>

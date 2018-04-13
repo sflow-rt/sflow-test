@@ -1,16 +1,22 @@
 // author: InMon Corp.
 // version: 1.0
-// date: 3/19/2018
+// date: 4/12/2018
 // description: Test sFlow export from switch/router
 // copyright: Copyright (c) 2015-2018 InMon Corp. ALL RIGHTS RESERVED
 
 include(scriptdir() + '/inc/trend.js');
 
+var version = "1.0";
+
 var includeRandomTest = "yes" == getSystemProperty("sflow-test.random");
+var submitURL = getSystemProperty("sflow-test.submit") || "https://sflow.org/test/submit.php";
 
 var PASS='pass';
 var FAIL='fail';
 var WAIT='wait';
+var FOUND='found';
+var NOTFOUND='notfound';
+
 function testResult(id,descr,status,data) {
   var result = {id:id,descr:descr,status:status};
   if(data) result.data = data;
@@ -37,7 +43,7 @@ function initializeTest() {
   baselineReset('pps-flows');
   baselineReset('pps-counters');
   test.agent = agent;
-  test.agents = agents();
+  test.agentInfo = agents([agent])[agent];
   test.trend = null;
   test.flowSamples = 0;
   test.flowInputPorts = {};
@@ -56,16 +62,23 @@ setFlow('sflow-test-ports',{keys:'inputifindex,outputifindex',value:'frames',fil
 setFlow('sflow-test-sizes',{keys:'ip_offset,ipbytes,bytes,stripped',value:'frames',filter:'direction=ingress',log:true,activeTimeout:10});
 setFlow('sflow-test-icmp',{keys:'ipsource,ipdestination,icmptype,icmpseqno',value:'frames',filter:'direction=ingress&prefix:stack:.:1=eth',log:true,flowStart:true,activeTimeout:1});
 
+var featureMetrics = [
+  {key:'host_name', descr: 'Host name'},
+  {key:'ifname', descr: 'ifName'},
+  {key:'agg_actorsystemid', descr:'LAG-MIB dot3adAggPortActorSystemID'},
+  {key:'agg_attachedaggid', descr:'LAG-MIB dot3adAggPortAttachedAggID'},
+  {key:'agg_partneropersystemid', descr:'LAG-MIB dot3adAggPortPartnerOperSystemID'}
+];
 var featureRecs = [
-  {key:'inputifindex',missing:'0'},
-  {key:'outputifindex',missing:'0'},
-  {key:'vlansource'},
-  {key:'vlandestination'},
-  {key:'prioritysource'},
-  {key:'prioritydestination'}
+  {key:'inputifindex',missing:'0',descr:'Ingress ifIndex'},
+  {key:'outputifindex',missing:'0',descr:'Egress IfIndex'},
+  {key:'vlansource',descr:'Source VLAN'},
+  {key:'vlandestination',descr:'Destination VLAN'},
+  {key:'prioritysource',descr:'Source priority'},
+  {key:'prioritydestination',descr:'Destination priority'}
 ];
 var featureKeys = featureRecs.map(rec => 'null:'+rec.key);
-setFlow('sflow-test-features',{keys:featureKeys,value:'frames',filter:'direction=ingress',log:true,flowStart:true});
+setFlow('sflow-test-features',{keys:featureKeys,value:'frames',filter:'direction=ingress',log:true,flowStart:true,activeTimeout:10});
 
 function testRandom(signs) {
   // Runs test for detecting non-randomness
@@ -156,36 +169,40 @@ setFlowHandler(function(rec) {
       let keyvals = rec.flowKeys.split(',');
       for(let i = 0; i < keyvals.length; i++) {
         let keyval = keyvals[i];
-        let missing = keyval == 'null' || (featureRecs[i].hasOwnProperty('missing') && keyval == featureRecs[i].missing);
-        if(!missing) test.features[featureRecs[i].key] = true;
+        if(keyval == 'null' || (featureRecs[i].hasOwnProperty('missing') && keyval == featureRecs[i].missing)) continue;
+        test.features[featureRecs[i].key] = true;
       }
       break;
   }
 },['sflow-test-ports','sflow-test-sizes','sflow-test-icmp','sflow-test-features']);
 
-function getFeatures() {
-  var result = [];
-  if(!test.agent) return result;
+function checkFeatures(res) {
+  var i,m,found;
+  if(!test.agent) return;
 
-  for(var i = 0; i < featureRecs.length; i++) {
-    if(test.features[featureRecs[i].key]) result.push(featureRecs[i].key);
+  for(i = 0; i < featureRecs.length; i++) {
+    found = test.features[featureRecs[i].key];
+    res.push(testResult(featureRecs[i].key,'Flow: '+featureRecs[i].descr,found?FOUND:NOTFOUND,found?"Found":"Not found"));
   }
-  return result;
+  for(i = 0; i < featureMetrics.length; i++) {
+    m = metric(test.agent,featureMetrics[i].key);
+    found = m && m[0] && m[0].metricN;
+    res.push(testResult(featureMetrics[i].key,'Counter: '+featureMetrics[i].descr,found?FOUND:NOTFOUND,found?"Found":"Not found"));
+  }
+}
+
+function checkDuration(res) {
+  var elapsed = (Date.now() - test.start) / 1000;
+  var status = elapsed < 300 ? WAIT : PASS;
+  res.push(testResult("duration","Test duration",status,formatNumber(elapsed,"#,##0 seconds")));
 }
 
 function checkAgent(res) {
-  if(!test.agent) return;
+  if(!test.agent || !test.agentInfo) return;
   
-  var agentsInfo = agents([test.agent]);
-  if(!agentsInfo) return;
-  var agentInfo = agentsInfo[test.agent];
+  var agentInfo = agents([test.agent])[test.agent];
   if(!agentInfo) return;
 
-  var elapsed = Math.min(agentInfo.firstSeen,(new Date()).getTime() - test.start) / 1000;
-  var status = elapsed < 300 ? WAIT : PASS; 
-  res.push(testResult("duration","test duration",status,formatNumber(elapsed,"#,##0 seconds")));
-
-  var counter, val, prev = test.agents[test.agent];
   var agtErrorCounters = [
     'sFlowDatagramsDuplicates',
     'sFlowDatagramsOutOfOrder',
@@ -193,14 +210,15 @@ function checkAgent(res) {
     'sFlowCounterOutOfOrderSamples',
     'sFlowFlowDuplicateSamples',
     'sFlowFlowOutOfOrderSamples'
-  ]; 
+  ];
+
+  var counter, val, thresh = 10, prev = test.agentInfo; 
   for each (counter in agtErrorCounters) {
-    val = agentInfo[counter];
-    if(prev) val -= prev[counter];
-    if(val > 0) break;
+    val = agentInfo[counter] - prev[counter];
+    if(val > thresh) break;
   }
   var datagrams = prev ? agentInfo['sFlowDatagramsReceived'] - prev['sFlowDatagramsReceived'] : agentInfo['sFlowDatagramsReceived'];
-  res.push(testResult("seqno","check sequence numbers", val > 0 ? FAIL : (datagrams ? PASS : WAIT), val > 0 ? counter : formatNumber(datagrams,'#,### datagrams')));
+  res.push(testResult("seqno","Check sequence numbers", val > thresh ? FAIL : (datagrams ? PASS : WAIT), val > thresh ? counter : formatNumber(datagrams,'#,### datagrams')));
 }
 
 function checkDatasources(res) {
@@ -229,7 +247,7 @@ function checkDatasources(res) {
       } 
     }
   }
-  res.push(testResult("datasources","check data sources", msg ? FAIL : (flow > 0 && counter > 0) ? PASS : WAIT, msg ? msg : "counter="+counter+" flow="+flow));
+  res.push(testResult("datasources","Check data sources", msg ? FAIL : (flow > 0 && counter > 0) ? PASS : WAIT, msg ? msg : "counter="+counter+" flow="+flow));
 }
 
 function checkFlowSize(res) {
@@ -247,7 +265,7 @@ function checkFlowSize(res) {
     status = PASS;
     msg = formatNumber(test.flowSizePackets,'#,### samples');
   }
-  res.push(testResult("pktsize","sampled packet size",status,msg)); 
+  res.push(testResult("pktsize","Sampled packet size",status,msg)); 
 }
 
 function checkRandomness(res) {
@@ -280,7 +298,7 @@ function checkRandomness(res) {
         break;
     } 
   }
-  res.push(testResult("random","random number generator", failed > 0 ? FAILED : (passed === 0 ? WAIT : PASS),"passed="+passed+" failed="+failed));
+  res.push(testResult("random","Random number generator", failed > 0 ? FAILED : (passed === 0 ? WAIT : PASS),"passed="+passed+" failed="+failed));
 }
 
 function checkBias(res) {
@@ -296,7 +314,7 @@ function checkBias(res) {
     msg = null;
     status = WAIT;
   }
-  res.push(testResult("bytes","compare byte flows to counters",status,msg));
+  res.push(testResult("bytes","Compare byte flows to counters",status,msg));
   stats_counters = baselineStatistics('pps-counters');
   stats_flows = baselineStatistics('pps-flows');
   if(stats_counters && stats_flows) {
@@ -308,7 +326,7 @@ function checkBias(res) {
     msg = null;
     status = WAIT;
   }
-  res.push(testResult("packets","compare packet flows to counters",status,msg));
+  res.push(testResult("packets","Compare packet flows to counters",status,msg));
 }
 
 function checkIngressPorts(res) {
@@ -329,7 +347,7 @@ function checkIngressPorts(res) {
   if(count === 0) status = WAIT;
   else if(inputPortCount > 0) status = PASS;
   else status = FAIL;
-  res.push(testResult("ingressportinfo","check ingress port information",status,"ingress="+inputPortCount+" egress="+outputPortCount));
+  res.push(testResult("ingressportinfo","Check ingress port information",status,"ingress="+inputPortCount+" egress="+outputPortCount));
 }
 
 setIntervalHandler(function(now) {
@@ -347,15 +365,12 @@ setIntervalHandler(function(now) {
   points['pps-flows'] = res[3].metricValue || 0;
 
   // calculate flow sample rate
-  var agentsInfo = agents([test.agent]);
   var flowSampleRate = 0;
-  if(agentsInfo) {
-    let agentInfo = agentsInfo[test.agent];
-    if(agentInfo) {
-      let flowSamples = agentInfo.sFlowFlowSamples;
-      if(test.flowSamples) flowSampleRate = flowSamples - test.flowSamples;
-      test.flowSamples = flowSamples; 
-    } 
+  var agentInfo = agents([test.agent])[test.agent];
+  if(agentInfo) {
+    let flowSamples = agentInfo.sFlowFlowSamples;
+    if(test.flowSamples) flowSampleRate = flowSamples - test.flowSamples;
+    test.flowSamples = flowSamples; 
   }
   points['sample-rate'] = flowSampleRate;
 
@@ -387,18 +402,23 @@ setHttpHandler(function(req) {
     case 'stop':
       break;
     case 'checks':
-      result = {};
+      result = {version:version,time:Date.now()};
       if(test.trend) result.trend = test.trend;
      
       tests = [];
+      checkDuration(tests);
       checkAgent(tests);
       checkDatasources(tests);
       checkFlowSize(tests);
       checkBias(tests);
       checkIngressPorts(tests);
       if(includeRandomTest) checkRandomness(tests);
+      checkFeatures(tests);
       result.tests = tests;
-      result.features = getFeatures();
+      break;
+    case 'upload':
+      try { http(submitURL,'post','application/json',JSON.stringify(req.body)); }
+      catch(e) { logWarning('upload failed ' + e); }
       break;
     default:
       throw "not_found";
