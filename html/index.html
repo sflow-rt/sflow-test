@@ -1,97 +1,118 @@
-<html>
-<head>
-<meta charset="UTF-8">
-<title>sFlow Test</title>
-<link rel="icon" type="image/png" href="../../../inc/img/favicon.png">
-<link rel="stylesheet" href="inc/inmsf/main.css" type="text/css">
-<link rel="stylesheet" href="inc/jquery-ui/jquery-ui.structure.min.css" type="text/css"/>
-<link rel="stylesheet" href="inc/jquery-ui/jquery-ui.theme.css" type="text/css"/>
-<link rel="stylesheet" href="../../../inc/stripchart.css" type="text/css"/>
-<link rel="stylesheet" href="css/app.css" type="text/css"/>
-<script type="text/javascript" src="../../../inc/jquery.min.js"></script>
-<script type="text/javascript" src="inc/jquery-ui/jquery-ui.min.js"></script>
-<script type="text/javascript" src="../../../inc/jquery.stripchart.js"></script>
-<script type="text/javascript" src="../../../inc/stripchart.js"></script>
-<script type="text/javascript" src="js/app.js"></script>
-</head>
-<body>
-  <div id="titleBar"><div id="product"><span id="logo"></span>sFlow Test</div></div>
-  <div id="tabs">
-    <ul>
-      <li><a href="#tests">Test</a></li>
-      <li><a href="#instructions">Instructions</a></li>
-    </ul>
-    <div id="tests">
-       <fieldset>
-         <span>
-           <label for="agent">Switch</label>
-           <select name="agent" id="agent" class="menu-button">
-             <option value="none" selected>none</option>
-           </select>
-         </span>
-         <span>
-           <button id="start">Start</button>
-           <button id="end">End</button>
-           <button id="print">Print</button>
-           <button id="upload">Upload</button>
-         </span>
-       </fieldset>
-      <div id="results">
-        <div id="bytes" class="trend"></div>
-        <div id="frames" class="trend"></div>
-        <div id="samples" class="trend"></div>
-        <table class="stripe" id="info">
-          <thead><tr><th>Status</th><th>Test</th><th>Info</th></tr></thead>
-          <tbody></tbody>
-        </table>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="icon" type="image/png" href="../../../inc/img/favicon.png">
+    <link rel="stylesheet" href="../../../inc/bootstrap.min.css">
+    <link rel="stylesheet" href="../../../inc/stripchart.css">
+    <link rel="stylesheet" href="css/typeaheadjs.css">
+    <link rel="stylesheet" href="css/app.css">
+    <script type="text/javascript" src="../../../inc/jquery.min.js"></script>
+    <script type="text/javascript" src="../../../inc/jquery.widget.js"></script>
+    <script type="text/javascript" src="../../../inc/jquery.stripchart.js"></script>
+    <script type="text/javascript" src="../../../inc/stripchart.js"></script>
+    <script type="text/javascript" src="../../../inc/popper.min.js"></script>
+    <script type="text/javascript" src="../../../inc/bootstrap.min.js"></script>
+    <script type="text/javascript" src="js/typeahead.jquery.min.js"></script>
+    <script type="text/javascript" src="js/app.js"></script>
+    <title>sFlow Test</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-sm navbar-dark mb-3" style="background-color: #336;">
+      <a class="navbar-brand" href="#">
+        <img src="../../../inc/img/inmon.svg" height="30" class="d-inline-block align-top">
+        sFlow Test
+      </a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav">
+          <li class="nav-item" data-toggle="collapse" data-target=".navbar-collapse.show">
+            <a class="nav-link" href="#test">Run</a>
+          </li>
+          <li class="nav-item" data-toggle="collapse" data-target=".navbar-collapse.show">
+            <a class="nav-link" href="#help">Help</a>
+          </li>
+        </ul>
       </div>
-    </div>
-    <div id="instructions">
-      <p>Tests can be applied while a switch is in production and are a useful way of verifying that the switch is configured and operating correctly.</p> 
-      <p>The following table contains recommended sFlow configuraton settings for production switches:</p>
-      <table class="stripe">
-         <thead><tr><th>Port Speed</th><th>Sampling Rate</th><th>Polling Interval</th></tr></thead>
-         <tbody>
-           <tr class="even"><td class="alignr">1 Gbit/s</td><td class="alignr">1-in-1,000</td><td class="alignr">30 seconds</td></tr>
-           <tr class="odd"><td class="alignr">2.5 Gbit/s</td><td class="alignr">1-in-2,500</td><td class="alignr">30 seconds</td></tr>
-           <tr class="even"><td class="alignr">5 Gbit/s</td><td class="alignr">1-in-5,000</td><td class="alignr">30 seconds</td></tr>
-           <tr class="odd"><td class="alignr">10 Gbit/s</td><td class="alignr">1-in-10,000</td><td class="alignr">30 seconds</td></tr>
-           <tr class="even"><td class="alignr">25 Gbit/s</td><td class="alignr">1-in-25,000</td><td class="alignr">30 seconds</td></tr>
-           <tr class="odd"><td class="alignr">40 Gbit/s</td><td class="alignr">1-in-40,000</td><td class="alignr">30 seconds</td></tr>
-           <tr class="even"><td class="alignr">50 Gbit/s</td><td class="alignr">1-in-50,000</td><td class="alignr">30 seconds</td></tr>
-           <tr class="odd"><td class="alignr">100 Gbit/s</td><td class="alignr">1-in-100,000</td><td class="alignr">30 seconds</td></tr>
-         </tbody>
-       </table>
-       <p>Enable counter polling and ingress packet sampling on all switch ports on all switches.</p>
-       <img src="img/test-setup.png" class="diagram">
-       <p>The diagram shows a simple setup for bench testing a switch. <i>Server1</i> and <i>Server2</i> are Linux servers uses to generate traffic through the switch being tested.</p>
-       <p>The following steps run the test:</p> 
-       <ol>
-         <li>Configure sFlow polling interval on switch to 10 seconds</li>
-         <li>Configure sFlow sampling rate on switch to 1000/#ports, e.g. 1-in-21 for 48 port switch.</li>
-         <li>Install iperf3 on both servers.</li>
-         <li>Copy <a href="run-test.txt">run-test.txt</a> script to <i>Server1</i>.</li>
-         <li>Start iperf3 server on <i>Server2</i>:<br><code>iperf3 -s -i 0</code></li>
-         <li>Select Switch on Tests tab and click Start</li>
-         <li>Run traffic generation script on <i>Server1</i>:<br><code>sh run-test.txt Server2</code></li>
-       </ol>
-       <p>The aggressive sampling rate used in this test generates a load on the switch management CPU that is representative of production deployment using the recommended settings.</p>
-    </div>
-  </div>
-  <div id="dialog" title="Upload Results">
-    <fieldset>
-      <legend>Device Description</legend>
-      <label for="vendor">Vendor</label><input type="text" size="20" name="vendor" id="vendor" class="text ui-widget-content"><br>
-      <label for="model">Model</label><input type="text" size="20" name="model" id="model" class="text ui-widget-content"><br>
-      <label for="firmware">Firmware</label><input type="text" size="40" name="firmware" id="firmware" class="text ui-widget-content">
-    </fieldset>
-    <fieldset>
-      <legend>Contact Information</legend>
-      <label for="name">Name</label><input type="text" size="20" name="name" id="name" class="text ui-widget-content"></br>
-      <label for="email">Email</label><input type="text" size="40" name="email" id="email" class="text ui-widget-content">
-    </fieldset>
-    <p><span class="warning">Warning:</span> You are uploading the test results to sFlow.org where they will be reviewed. The results will not be shared publicly without first obtaining your written permission.</p>
-  </div>
-  <div id="copyright">Copyright &copy; 2018-2019 InMon Corp. ALL RIGHTS RESERVED</div>
-</body>
+    </nav>
+    <main class="container-fluid" role="main">
+      <div id="test">
+        <form autocomplete="off">
+          <div class="form-row">
+            <div class="col-md-9 mb-3">
+              <input type="text" class="typeahead form-control" id="switch" placeholder="Switch">
+            </div>
+            <div class="col-md-1 mb-3">
+              <button id="reset" type="button" class="btn btn-secondary btn-block">Reset</button>
+            </div>
+            <div class="col-md-1 mb-3">
+              <button id="start" type="button" class="btn btn-primary btn-block">Start</button>
+            </div>
+            <div class="col-md-1 mb-3">
+              <button id="end" type="button" class="btn btn-primary btn-block" disabled>End</button>
+            </div>
+          </div>
+        </form>
+        <div id="results">
+          <div id="bytes" class="trend"></div>
+          <div id="frames" class="trend"></div>
+          <div id="samples" class="trend"></div>
+          <div id="drops" class="trend"></div>
+          <table class="table table-bordered table-sm" id="info">
+            <thead class="thead-light">
+              <tr><th>Status</th><th>Test</th><th>Info</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="help">
+        <p>Tests can be applied while a switch is in production and are a useful way of verifying that the switch is configured and operating correctly.</p> 
+        <p>The following table contains recommended sFlow configuraton settings for production switches:</p>
+        <table class="table table-striped table-bordered table-sm">
+           <caption>Recommended settings</caption>
+           <thead class="thead-light">
+             <tr><th>Port Speed</th><th>Sampling Rate</th><th>Polling Interval</th></tr>
+           </thead>
+           <tbody>
+             <tr><td>1 Gbit/s</td><td>1-in-1,000</td><td>20 seconds</td></tr>
+             <tr><td>2.5 Gbit/s</td><td>1-in-2,500</td><td>20 seconds</td></tr>
+             <tr><td>5 Gbit/s</td><td>1-in-5,000</td><td>20 seconds</td></tr>
+             <tr><td>10 Gbit/s</td><td>1-in-10,000</td><td>20 seconds</td></tr>
+             <tr><td>25 Gbit/s</td><td>1-in-25,000</td><td>20 seconds</td></tr>
+             <tr><td>40 Gbit/s</td><td>1-in-40,000</td><td>20 seconds</td></tr>
+             <tr><td>50 Gbit/s</td><td>1-in-50,000</td><td>20 seconds</td></tr>
+             <tr><td>100 Gbit/s</td><td>1-in-100,000</td><td>20 seconds</td></tr>
+             <tr><td>400 Gbit/s</td><td>1-in-400,000</td><td>20 seconds</td></tr>
+             <tr><td>800 Gbit/s</td><td>1-in-800,000</td><td>20 seconds</td></tr>
+           </tbody>
+         </table>
+         <p>Enable counter polling and ingress/bidirectional packet sampling on all switch ports on all switches.</p>
+         <figure class="figure">
+           <img src="img/test-setup.png" class="figure-img img-fluid">
+         </figure>
+         <p>The diagram shows a simple setup for bench testing a switch. <i>Server1</i> and <i>Server2</i> are Linux servers uses to generate traffic through the switch being tested.</p>
+         <p>The following steps run the test:</p> 
+         <ol>
+           <li>Configure sFlow polling interval on switch to 10 seconds</li>
+           <li>Configure sFlow sampling rate on switch to 1000/#ports, e.g. 1-in-21 for 48 port switch.</li>
+           <li>Install iperf3 on both servers.</li>
+           <li>Copy <a href="run-test.txt">run-test.txt</a> script to <i>Server1</i>.</li>
+           <li>Start iperf3 server on <i>Server2</i>:<pre class="bg-light"><code>iperf3 -s -i 0</code></pre></li>
+           <li>Select Switch on Tests tab and click Start</li>
+           <li>Run traffic generation script on <i>Server1</i>:<pre class="bg-light"><code>sh run-test.txt Server2</code></pre></li>
+         </ol>
+         <p>The aggressive sampling rate used in this test generates a load on the switch management CPU that is representative of production deployment using the recommended settings.</p>
+        </div>
+      </div>
+    </main>
+    <footer class="footer page-footer border-top mt-3">
+       <div class="footer-copyright text-center py-2">
+         <small class="text-muted">Copyright &copy; 2018-2025 InMon Corp. ALL RIGHTS RESERVED</small>
+       </div>
+    </footer>
+  </body>
 </html>

@@ -1,15 +1,14 @@
 // author: InMon Corp.
 // version: 1.0
-// date: 4/12/2018
+// date: 3/12/2025
 // description: Test sFlow export from switch/router
-// copyright: Copyright (c) 2015-2018 InMon Corp. ALL RIGHTS RESERVED
+// copyright: Copyright (c) 2015-2025 InMon Corp. ALL RIGHTS RESERVED
 
 include(scriptdir() + '/inc/trend.js');
 
-var version = "1.0";
+var version = "1.1";
 
 var includeRandomTest = "yes" == getSystemProperty("sflow-test.random");
-var submitURL = getSystemProperty("sflow-test.submit") || "https://sflow.org/test/submit.php";
 
 var PASS='pass';
 var FAIL='fail';
@@ -61,6 +60,7 @@ setFlow('sflow-test-frames',{value:'frames',filter:'direction=ingress',t:1});
 setFlow('sflow-test-ports',{keys:'inputifindex,outputifindex',value:'frames',filter:'direction=ingress',log:true, activeTimeout:10});
 setFlow('sflow-test-sizes',{keys:'ip_offset,ipbytes,bytes,stripped',value:'frames',filter:'direction=ingress',log:true,activeTimeout:10});
 setFlow('sflow-test-icmp',{keys:'ipsource,ipdestination,icmptype,icmpseqno',value:'frames',filter:'direction=ingress&prefix:stack:.:1=eth',log:true,flowStart:true,activeTimeout:1});
+setFlow('sflow-test-drops',{keys:'reason',value:'frames',dropped:true});
 
 var featureMetrics = [
   {key:'host_name', descr: 'Host name'},
@@ -78,6 +78,9 @@ var featureMetrics = [
 var featureRecs = [
   {key:'inputifindex',missing:'0',descr:'Ingress ifIndex'},
   {key:'outputifindex',missing:'0',descr:'Egress IfIndex'},
+  {key:'queueindex',descr:'Egress Queue Index'},
+  {key:'[range:queuedepth:0]',descr:'Egress Queue Depth'},
+  {key:'[range:transitdelay:0]',descr:'Packet Transit Delay'},
   {key:'vlansource',descr:'Source VLAN'},
   {key:'vlandestination',descr:'Destination VLAN'},
   {key:'prioritysource',descr:'Source priority'},
@@ -94,7 +97,7 @@ var featureRecs = [
   {key:'bgplocalpref',descr:'BGP localpref'}
 ];
 var featureKeys = featureRecs.map(rec => 'null:'+rec.key);
-setFlow('sflow-test-features',{keys:featureKeys,value:'frames',filter:'direction=ingress',log:true,flowStart:true,activeTimeout:10});
+setFlow('sflow-test-features',{keys:featureKeys,value:'frames',log:true,flowStart:true,activeTimeout:10});
 
 function testRandom(signs) {
   // Runs test for detecting non-randomness
@@ -366,6 +369,18 @@ function checkIngressPorts(res) {
   res.push(testResult("ingressportinfo","Check ingress port information",status,"ingress="+inputPortCount+" egress="+outputPortCount));
 }
 
+function calculateTopN(agents,metric,n,minVal) {     
+  var top = activeFlows(agents,metric,n,minVal);
+  var topN = {};
+  if(top) {
+    top.forEach(function(entry) {
+      var val = entry.value;
+      topN[entry.key] = val;
+    });
+  }
+  return topN;
+}
+
 setIntervalHandler(function(now) {
   if(!test.agent) return;
   if(!test.trend) test.trend = new Trend(300,1);
@@ -390,6 +405,8 @@ setIntervalHandler(function(now) {
   }
   points['sample-rate'] = flowSampleRate;
 
+  points['drop-reasons'] = calculateTopN(test.agent,'sflow-test-drops',5,0);
+
   test.trend.addPoints(now,points);
   
   baselineCheck('bps-flows',points['bps-flows']);
@@ -399,23 +416,26 @@ setIntervalHandler(function(now) {
 },1);
 
 setHttpHandler(function(req) {
-  var result, tests, path = req.path;
+  var result, tests, search, path = req.path;
   if(!path || path.length !== 1) throw "not_found";
 
   switch(path[0]) {
     case 'agents':
-      result = {agents:[]};
-      if(agent) result.agent = agent;
-      for(let agt in agents()) result.agents.push(agt);
-      result.agents.sort();
-      break;
-    case 'agent':
-      agent = req.query.agent;
+      result = [];
+      search = req.query['search'];
+      if(search) {
+        matcher = new RegExp(search[0].replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, '\\$&'), 'i');
+        result = Object.keys(agents()).filter((k) => matcher.test(k));
+      } else {
+        result = Object.keys(agents());
+      }
       break;
     case 'start':
+      agent = req.query.agent;
       initializeTest();
       break;
     case 'stop':
+      agent = null;
       break;
     case 'checks':
       result = {version:version,time:Date.now()};
@@ -431,10 +451,6 @@ setHttpHandler(function(req) {
       if(includeRandomTest) checkRandomness(tests);
       checkFeatures(tests);
       result.tests = tests;
-      break;
-    case 'upload':
-      try { http(submitURL,'post','application/json',JSON.stringify(req.body)); }
-      catch(e) { logWarning('upload failed ' + e); }
       break;
     default:
       throw "not_found";

@@ -1,95 +1,56 @@
 $(function() { 
   var restPath =  '../scripts/test.js/';
   var agentsPath = restPath+"agents/json";
-  var agentPath = restPath+"agent/json";
   var checkPath = restPath+"checks/json";
   var startPath = restPath+"start/json";
   var stopPath = restPath+"stop/json";
-  var uploadPath = restPath+"upload/json";
 
   var lastTest;
 
-  var defaults = {
-    tab:0,
-    overall0:'show',
-    overall1:'hide',
-  };
-
-  var state = {};
-  $.extend(state,defaults);
-
-  function createQuery(params) {
-    var query, key, value;
-    for(key in params) {
-      value = params[key];
-      if(value == defaults[key]) continue;
-      if(query) query += '&';
-      else query = '';
-      query += encodeURIComponent(key)+'='+encodeURIComponent(value);
-    }
-    return query;
+  function setNav(target) {
+    $('.navbar .nav-item a[href="'+target+'"]').parent().addClass('active').siblings().removeClass('active');
+    $(target).show().siblings().hide();
+    window.sessionStorage.setItem('sflow_test_nav',target);
+    window.history.replaceState(null,'',target);
   }
 
-  function getState(key, defVal) {
-    return window.sessionStorage.getItem('sflow_test_'+key) || state[key] || defVal;
-  }
+  var hash = window.location.hash;
+  if(hash && $('.navbar .nav-item a[href="'+hash+'"]').length == 1) setNav(hash);
+  else setNav(window.sessionStorage.getItem('sflow_test_nav') || $('.navbar .nav-item a').first().attr('href'));
 
-  function setState(key, val, showQuery) {
-    state[key] = val;
-    window.sessionStorage.setItem('sflow_test_'+key, val);
-    if(showQuery) {
-      var query = createQuery(state);
-      window.history.replaceState({},'',query ? '?' + query : './');
-    }
-  }
-
-  function setQueryParams(query) {
-    var vars, params, i, pair;
-    vars = query.split('&');
-    params = {};
-    for(i = 0; i < vars.length; i++) {
-      pair = vars[i].split('=');
-      if(pair.length == 2) setState(decodeURIComponent(pair[0]), decodeURIComponent(pair[1]),false);
-    }
-  }
-
-  var search = window.location.search;
-  if(search) setQueryParams(search.substring(1));
-
-  var dialog = $('#dialog').dialog({
-    autoOpen:false,
-    modal: true,
-    width: '700px',
-    buttons: {
-      Submit: function() {
-        lastTest.vendor = $('#vendor').val();
-        lastTest.model = $('#model').val();
-        lastTest.firmware = $('#firmware').val();
-        lastTest.name = $('#name').val();
-        lastTest.email = $('#email').val();
-        $.ajax({
-          url:uploadPath,
-          type: 'POST',
-          contentType:'application/json',
-          data:JSON.stringify(lastTest)
-        });
-        dialog.dialog('close');
-      },
-      Cancel: function() { dialog.dialog('close'); }
-    }
+  $('.navbar .nav-link').on('click', function(e) {
+    var selected = $(this).attr('href');
+    setNav(selected);
+    if('#test' === selected) $.event.trigger({type:'updateChart'});
   });
 
-  $('#tabs').tabs({
-    active: getState('tab', 0),
-    activate: function(event, ui) {
-      var newIndex = ui.newTab.index();
-      setState('tab', newIndex, true);
-      $.event.trigger({type:'updateChart'});
-    },
-    create: function(event,ui) {
-      $.event.trigger({type:'updateChart'});
-    }
-  }); 
+  $('a[href^="#"]').on('click', function(e) {
+    e.preventDefault();
+  });
+
+  function agentSuggestions(q, sync, async) {
+    $.getJSON(agentsPath, { search: q }, function(suggestedToken) {
+      if(suggestedToken.length === 1 && suggestedToken[0] === q) return;
+      var suggestions = [];
+      for (var i = 0; i < suggestedToken.length; i++) {
+        suggestions.push(suggestedToken[i]); 
+      }
+      async(suggestions); 
+    });
+  }
+
+  $('#switch')
+    .val('')
+    .typeahead(
+      {
+        highlight: true,
+        minLength: 0
+      },
+      {
+        name: 'switch',
+        source: agentSuggestions
+      }
+    )
 
   $('#results').hide();
 
@@ -114,52 +75,52 @@ $(function() {
     stack: false,
     units: 'Samples per Second'},
   db);
-
-  $.get(agentsPath, function(data) {
-    $.each(data.agents, function(index,item) {
-      $('<option value="'+ item + '">'+item+'</option>').appendTo('#agent');
-    });
-    if(data.agent) {
-      $('#agent').val(data.agent);
-      $('#start').button('option','disabled','none' == data.agent);
-      $('#end').button('option','disabled',true);
-      $('#print').button('option','disabled',true);
-      $('#upload').button('option','disabled',true);
-    }
-    $('#agent').selectmenu({
-      change:function() {
-        stopPollTestResults();
-        var agent = $('#agent').val();
-        $.get(agentPath,{'agent':$('#agent').val()});
-        $('#results').hide();
-        $('#start').button('option','disabled','none'==agent);
-        $('#end').button('option','disabled',true);
-        $('#print').button('option','disabled',true);
-        $('#upload').button('option','disabled',true);
-      }
-    });
-  });
+  $('#drops').chart({
+    type: 'topn',
+    stack: true,
+    includeOther: false,
+    metric: 'drop-reasons',
+    legendHeadings: ['Drop Reason'],
+    units: ['Drops per Seconds']},
+  db);
 
   function updateTests(data) {
-    var status = $('#info tbody');
-    status.empty();
+    var info = $('#info tbody');
+    info.empty();
     if(data && data.tests && data.tests.length > 0) {
       for(var r = 0; r < data.tests.length; r++) {
         var entry = data.tests[r];
-        var cl;
+        var test_class,test_status;
         switch(entry.status) {
-          case 'wait': cl = 'warn'; break;
-          case 'fail': cl = 'error'; break;
-          case 'pass': cl = 'good'; break;
-          case 'found': cl = 'good'; break;
-          case 'notfound': cl = 'warn'; break;
-          default: cl = r%2 === 0 ? 'even' : 'odd';
+          case 'wait':
+            test_class = 'table-warning';
+            test_status = 'Waiting';
+            break;
+          case 'fail':
+            test_class = 'table-danger';
+            test_status = 'Failed';
+            break;
+          case 'pass':
+            test_class = 'table-success';
+            test_status = 'Passed';
+            break;
+          case 'found':
+            test_class = 'table-success';
+            test_status = 'Found';
+            break;
+          case 'notfound':
+            test_class = 'table-warning';
+            test_status = 'Not Found';
+            break;
+          default:
+            test_class = 'table-light';
+            test_status = entry.status;
         }
-        var row = $('<tr class="'+cl+'"></tr>');
-        row.append('<td>'+entry.status+'</td>');
+        var row = $('<tr class="'+test_class+'"></tr>');
+        row.append('<td>'+test_status+'</td>');
         row.append('<td>'+entry.descr+'</td>');
         row.append('<td>'+ (entry.data ? entry.data : '') + '</td>');
-        status.append(row);
+        info.append(row);
       }
     } else {
       status.append('<tr><td colspan="3" class="alignc">No data</td></tr>');
@@ -204,35 +165,37 @@ $(function() {
     if(timeout_test) clearTimeout(timeout_test);
   }
 
-  $('#start').button({disabled:true}).click(function() {
-    $('#agent').selectmenu('option','disabled',true);
-    $('#start').button('option','disabled',true);
-    $('#end').button('option','disabled',false);
-    $('#print').button('option','disabled',true);
-    $('#upload').button('option','disabled',true);
+  $('#start').click(function() {
+    var agent = $('#switch').typeahead('val');
+    if(!agent) return;
+
+    $('#reset').prop('disabled',true);
+    $('#start').prop('disabled',true);
+    $('#end').prop('disabled',false);
     $.ajax({
       url:startPath,
+      data: { agent: agent },
       success:function() {
         $('#results').show();
         pollTestResults();
       }
     });
   });
-  $('#end').button({disabled:true}).click(function() {
-    $('#agent').selectmenu('option','disabled',false);
-    $('#start').button('option','disabled',false);
-    $('#end').button('option','disabled',true);
-    $('#print').button('option','disabled',false);
-    $('#upload').button('option','disabled',false);
+  $('#end').click(function() {
+    $('#start').prop('disabled',false);
+    $('#end').prop('disabled',true);
     $.ajax({
       url:stopPath,
-      success: function() {
+      complete: function() {
         stopPollTestResults();
+        $('#reset').prop('disabled',false);
       }
     });
   });
-  $('#print').button({disabled:true}).click(function() { window.print(); });
-  $('#upload').button({disabled:true}).click(function() {
-    dialog.dialog('open');
+  $('#reset').click(function() {
+    $('#switch').typeahead('val','');
+    $('#start').prop('disabled',false);
+    $('#end').prop('disabled',true);
+    $('#results').hide();
   });
 });
